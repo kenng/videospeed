@@ -417,6 +417,41 @@ function refreshCoolDown() {
 }
 
 function setupListener() {
+  function onWheelEvent(ev) {
+    let changeRate = 0.1;
+    if (ev.shiftKey) {
+      if (ev.altKey) {
+        if (ev.deltaY > 0) {
+          ev.preventDefault();
+          runAction("softer", changeRate);
+        } else {
+          ev.preventDefault();
+          runAction("louder", changeRate);
+        }
+      } else {
+        if (ev.deltaY > 0) {
+          ev.preventDefault();
+          runAction("rewind", changeRate * 10);
+        } else {
+          ev.preventDefault();
+          runAction("advance", changeRate * 10);
+        }
+      }
+    } else if (ev.altKey) {
+      if (ev.deltaY > 0) {
+        ev.preventDefault();
+        runAction("slower", changeRate);
+      } else {
+        ev.preventDefault();
+        runAction("faster", changeRate);
+      }
+    }
+  }
+
+  window.addEventListener("wheel", onWheelEvent.bind(this), {
+    passive: false
+  });
+
   /**
    * This function is run whenever a video speed rate change occurs.
    * It is used to update the speed that shows up in the display as well as save
@@ -735,7 +770,13 @@ function runAction(action, value, e) {
     showController(controller);
 
     if (!v.classList.contains("vsc-cancelled")) {
-      if (action === "rewind") {
+      if (action === "softer") {
+        v.volume -= value;
+        log(`softer: ${v.volume}`, 5);
+      } else if (action === "louder") {
+        v.volume += value;
+        log(`louder: ${v.volume}`, 5);
+      } else if (action === "rewind") {
         log("Rewind", 5);
         v.currentTime -= value;
       } else if (action === "advance") {
