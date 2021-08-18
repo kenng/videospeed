@@ -307,6 +307,7 @@ function defineVideoController() {
             <button data-action="louder" class="rw">&and;</button>
             <button data-action="softer" class="rw">&or;</button>
             <button data-action="advance" class="rw">»</button>
+            <button data-action="screenshot">pic</button>
             <button data-action="display" class="hideButton">&times;</button>
           </span>
         </div>
@@ -454,6 +455,12 @@ function setupListener() {
     passive: false
   });
 
+  document.body.addEventListener("keydown", function (evt) {
+    if (evt.ctrlKey && evt.shiftKey && evt.key == "C") {
+      runAction("screenshot");
+    }
+  });
+
   /**
    * This function is run whenever a video speed rate change occurs.
    * It is used to update the speed that shows up in the display as well as save
@@ -464,8 +471,7 @@ function setupListener() {
   function updateSpeedFromEvent(video) {
     // It's possible to get a rate change on a VIDEO/AUDIO that doesn't have
     // a video controller attached to it.  If we do, ignore it.
-    if (!video.vsc)
-      return;
+    if (!video.vsc) return;
     var speedIndicator = video.vsc.speedIndicator;
     var src = video.currentSrc;
     var speed = Number(video.playbackRate.toFixed(2));
@@ -691,8 +697,7 @@ function initializeNow(document) {
                   (x) => x.tagName == "VIDEO"
                 )[0];
                 if (node) {
-                  if (node.vsc)
-                    node.vsc.remove();
+                  if (node.vsc) node.vsc.remove();
                   checkForVideo(node, node.parentNode || mutation.target, true);
                 }
               }
@@ -749,6 +754,48 @@ function setSpeed(video, speed) {
   tc.settings.lastSpeed = speed;
   refreshCoolDown();
   log("setSpeed finished: " + speed, 5);
+}
+
+/*
+ * Captures a image frame from the provided video element.
+ *
+ * @param {videoElem} video HTML5 video element from where the image frame will be captured.
+ * @param {Number} scaleFactor Factor to scale the canvas element that will be return. This is an optional parameter.
+ *
+ * reference: https://codepen.io/ganmahmud/pen/wMyopY
+ */
+function screenshot(videoElem, scaleFactor) {
+  if (scaleFactor == null) {
+    scaleFactor = 1;
+  }
+  var w = videoElem.videoWidth * scaleFactor;
+  var h = videoElem.videoHeight * scaleFactor;
+  var canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  var ctx = canvas.getContext("2d");
+  ctx.drawImage(videoElem, 0, 0, w, h);
+  return canvas;
+}
+
+/*
+ * reference: https://github.com/code4charity/YouTube-Extension
+ */
+function downloadScreenshot(videoElem) {
+  canvas = screenshot(videoElem);
+  canvas.toBlob(function (blob) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download =
+      location.href.match(/(\?|\&)v=[^&]+/)[0].substr(3) +
+      "-" +
+      new Date(videoElem.currentTime * 1000)
+        .toISOString()
+        .substr(11, 8)
+        .replace(/:/g, "-") +
+      ".png";
+    a.click();
+  });
 }
 
 function runAction(action, value, e) {
@@ -835,6 +882,8 @@ function runAction(action, value, e) {
         setMark(v);
       } else if (action === "jump") {
         jumpToMark(v);
+      } else if (action === "screenshot") {
+        downloadScreenshot(v);
       }
     }
   });
