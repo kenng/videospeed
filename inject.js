@@ -304,6 +304,8 @@ function defineVideoController() {
             <button data-action="rewind" class="rw">«</button>
             <button data-action="slower">&minus;</button>
             <button data-action="faster">&plus;</button>
+            <button data-action="louder" class="rw">&and;</button>
+            <button data-action="softer" class="rw">&or;</button>
             <button data-action="advance" class="rw">»</button>
             <button data-action="display" class="hideButton">&times;</button>
           </span>
