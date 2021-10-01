@@ -456,7 +456,7 @@ function setupListener() {
   });
 
   document.body.addEventListener("keydown", function (evt) {
-    if (evt.ctrlKey && evt.shiftKey && evt.key == "C") {
+    if (evt.ctrlKey && evt.altKey && evt.shiftKey && evt.key == "C") {
       runAction("screenshot");
     }
   });
@@ -778,6 +778,16 @@ function screenshot(videoElem, scaleFactor) {
   return canvas;
 }
 
+function getImageName(url, videoElem) {
+  const youtubeName = url.match(/(\?|\&)v=[^&]+/);
+  if (!youtubeName) {
+    const urlObj = new URL(videoElem.src);
+    return urlObj.pathname.substr(1);
+  }
+
+  return youtubeName[0].substr(3);
+}
+
 /*
  * reference: https://github.com/code4charity/YouTube-Extension
  */
@@ -785,9 +795,10 @@ function downloadScreenshot(videoElem) {
   canvas = screenshot(videoElem);
   canvas.toBlob(function (blob) {
     const a = document.createElement("a");
+    a.crossorigin = "anonymous";
     a.href = URL.createObjectURL(blob);
     a.download =
-      location.href.match(/(\?|\&)v=[^&]+/)[0].substr(3) +
+      getImageName(location.href, videoElem) +
       "-" +
       new Date(videoElem.currentTime * 1000)
         .toISOString()
