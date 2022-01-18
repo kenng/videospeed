@@ -300,6 +300,7 @@ function defineVideoController() {
       tc.settings.controllerOpacity
     }">
           <span data-action="drag" class="draggable">${speed}</span>
+          <span id="vsc-log" data-action="log" class="vsc-shadow-hidden"></span>
           <span id="controls">
             <button data-action="rewind" class="rw">«</button>
             <button data-action="slower">&minus;</button>
@@ -359,8 +360,9 @@ function defineVideoController() {
         // this is a monstrosity but new FB design does not have *any*
         // semantic handles for us to traverse the tree, and deep nesting
         // that we need to bubble up from to get controller to stack correctly
-        let p = this.parent.parentElement.parentElement.parentElement
-          .parentElement.parentElement.parentElement.parentElement;
+        let p =
+          this.parent.parentElement.parentElement.parentElement.parentElement
+            .parentElement.parentElement.parentElement;
         p.insertBefore(fragment, p.firstChild);
         break;
       case location.hostname == "tv.apple.com":
@@ -781,7 +783,7 @@ function screenshot(videoElem, scaleFactor) {
 function getImageName(url, videoElem) {
   const youtubeName = url.match(/(\?|\&)v=[^&]+/);
   if (!youtubeName) {
-    const urlObj = new URL(videoElem.src);
+    const urlObj = new URL(videoElem.src || videoElem.baseURI);
     return urlObj.pathname.substr(1);
   }
 
@@ -807,6 +809,26 @@ function downloadScreenshot(videoElem) {
       ".png";
     a.click();
   });
+}
+
+function blinkLog(controller, msg, value) {
+  const elem = controller.shadowRoot.querySelector("#vsc-log");
+
+  if (
+    elem.classList.contains("vsc-shadow-hidden") ||
+    elem.blinkTimeOut !== undefined
+  ) {
+    clearTimeout(elem.blinkTimeOut);
+    elem.textContent = msg;
+    elem.classList.remove("vsc-shadow-hidden");
+    elem.blinkTimeOut = setTimeout(
+      () => {
+        elem.classList.add("vsc-shadow-hidden");
+        elem.blinkTimeOut = undefined;
+      },
+      value ? value : 1000
+    );
+  }
 }
 
 function runAction(action, value, e) {
@@ -895,6 +917,7 @@ function runAction(action, value, e) {
         jumpToMark(v);
       } else if (action === "screenshot") {
         downloadScreenshot(v);
+        blinkLog(controller, "Capturing image");
       }
     }
   });

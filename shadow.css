@@ -93,3 +93,7 @@ button.hideButton {
   opacity: 0.65;
   margin-right: 2px;
 }
+
+.vsc-shadow-hidden {
+  display: none !important;
+}
