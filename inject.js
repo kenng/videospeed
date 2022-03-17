@@ -300,11 +300,15 @@ function defineVideoController() {
       tc.settings.controllerOpacity
     }">
           <span data-action="drag" class="draggable">${speed}</span>
+          <span id="vsc-log" data-action="log" class="vsc-shadow-hidden"></span>
           <span id="controls">
             <button data-action="rewind" class="rw">«</button>
             <button data-action="slower">&minus;</button>
             <button data-action="faster">&plus;</button>
+            <button data-action="louder" class="rw">&and;</button>
+            <button data-action="softer" class="rw">&or;</button>
             <button data-action="advance" class="rw">»</button>
+            <button data-action="screenshot">pic</button>
             <button data-action="display" class="hideButton">&times;</button>
           </span>
         </div>
@@ -356,8 +360,9 @@ function defineVideoController() {
         // this is a monstrosity but new FB design does not have *any*
         // semantic handles for us to traverse the tree, and deep nesting
         // that we need to bubble up from to get controller to stack correctly
-        let p = this.parent.parentElement.parentElement.parentElement
-          .parentElement.parentElement.parentElement.parentElement;
+        let p =
+          this.parent.parentElement.parentElement.parentElement.parentElement
+            .parentElement.parentElement.parentElement;
         p.insertBefore(fragment, p.firstChild);
         break;
       case location.hostname == "tv.apple.com":
@@ -417,6 +422,47 @@ function refreshCoolDown() {
 }
 
 function setupListener() {
+  function onWheelEvent(ev) {
+    let changeRate = 0.1;
+    if (ev.shiftKey) {
+      if (ev.altKey) {
+        if (ev.deltaY > 0) {
+          ev.preventDefault();
+          runAction("softer", changeRate);
+        } else {
+          ev.preventDefault();
+          runAction("louder", changeRate);
+        }
+      } else {
+        if (ev.deltaY > 0) {
+          ev.preventDefault();
+          runAction("rewind", changeRate * 10);
+        } else {
+          ev.preventDefault();
+          runAction("advance", changeRate * 10);
+        }
+      }
+    } else if (ev.altKey) {
+      if (ev.deltaY > 0) {
+        ev.preventDefault();
+        runAction("slower", changeRate);
+      } else {
+        ev.preventDefault();
+        runAction("faster", changeRate);
+      }
+    }
+  }
+
+  window.addEventListener("wheel", onWheelEvent.bind(this), {
+    passive: false
+  });
+
+  document.body.addEventListener("keydown", function (evt) {
+    if (evt.ctrlKey && evt.altKey && evt.shiftKey && evt.key == "C") {
+      runAction("screenshot");
+    }
+  });
+
   /**
    * This function is run whenever a video speed rate change occurs.
    * It is used to update the speed that shows up in the display as well as save
@@ -427,8 +473,7 @@ function setupListener() {
   function updateSpeedFromEvent(video) {
     // It's possible to get a rate change on a VIDEO/AUDIO that doesn't have
     // a video controller attached to it.  If we do, ignore it.
-    if (!video.vsc)
-      return;
+    if (!video.vsc) return;
     var speedIndicator = video.vsc.speedIndicator;
     var src = video.currentSrc;
     var speed = Number(video.playbackRate.toFixed(2));
@@ -654,8 +699,7 @@ function initializeNow(document) {
                   (x) => x.tagName == "VIDEO"
                 )[0];
                 if (node) {
-                  if (node.vsc)
-                    node.vsc.remove();
+                  if (node.vsc) node.vsc.remove();
                   checkForVideo(node, node.parentNode || mutation.target, true);
                 }
               }
@@ -714,6 +758,79 @@ function setSpeed(video, speed) {
   log("setSpeed finished: " + speed, 5);
 }
 
+/*
+ * Captures a image frame from the provided video element.
+ *
+ * @param {videoElem} video HTML5 video element from where the image frame will be captured.
+ * @param {Number} scaleFactor Factor to scale the canvas element that will be return. This is an optional parameter.
+ *
+ * reference: https://codepen.io/ganmahmud/pen/wMyopY
+ */
+function screenshot(videoElem, scaleFactor) {
+  if (scaleFactor == null) {
+    scaleFactor = 1;
+  }
+  var w = videoElem.videoWidth * scaleFactor;
+  var h = videoElem.videoHeight * scaleFactor;
+  var canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  var ctx = canvas.getContext("2d");
+  ctx.drawImage(videoElem, 0, 0, w, h);
+  return canvas;
+}
+
+function getImageName(url, videoElem) {
+  const youtubeName = url.match(/(\?|\&)v=[^&]+/);
+  if (!youtubeName) {
+    const urlObj = new URL(videoElem.src || videoElem.baseURI);
+    return urlObj.pathname.substr(1);
+  }
+
+  return youtubeName[0].substr(3);
+}
+
+/*
+ * reference: https://github.com/code4charity/YouTube-Extension
+ */
+function downloadScreenshot(videoElem) {
+  canvas = screenshot(videoElem);
+  canvas.toBlob(function (blob) {
+    const a = document.createElement("a");
+    a.crossorigin = "anonymous";
+    a.href = URL.createObjectURL(blob);
+    a.download =
+      getImageName(location.href, videoElem) +
+      "-" +
+      new Date(videoElem.currentTime * 1000)
+        .toISOString()
+        .substr(11, 8)
+        .replace(/:/g, "-") +
+      ".png";
+    a.click();
+  });
+}
+
+function blinkLog(controller, msg, value) {
+  const elem = controller.shadowRoot.querySelector("#vsc-log");
+
+  if (
+    elem.classList.contains("vsc-shadow-hidden") ||
+    elem.blinkTimeOut !== undefined
+  ) {
+    clearTimeout(elem.blinkTimeOut);
+    elem.textContent = msg;
+    elem.classList.remove("vsc-shadow-hidden");
+    elem.blinkTimeOut = setTimeout(
+      () => {
+        elem.classList.add("vsc-shadow-hidden");
+        elem.blinkTimeOut = undefined;
+      },
+      value ? value : 1000
+    );
+  }
+}
+
 function runAction(action, value, e) {
   log("runAction Begin", 5);
 
@@ -735,7 +852,13 @@ function runAction(action, value, e) {
     showController(controller);
 
     if (!v.classList.contains("vsc-cancelled")) {
-      if (action === "rewind") {
+      if (action === "softer") {
+        v.volume -= value;
+        log(`softer: ${v.volume}`, 5);
+      } else if (action === "louder") {
+        v.volume += value;
+        log(`louder: ${v.volume}`, 5);
+      } else if (action === "rewind") {
         log("Rewind", 5);
         v.currentTime -= value;
       } else if (action === "advance") {
@@ -792,6 +915,9 @@ function runAction(action, value, e) {
         setMark(v);
       } else if (action === "jump") {
         jumpToMark(v);
+      } else if (action === "screenshot") {
+        downloadScreenshot(v);
+        blinkLog(controller, "Capturing image");
       }
     }
   });
