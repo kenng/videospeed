@@ -1,4 +1,5 @@
 var regStrip = /^[\r\t\f\v ]+|[\r\t\f\v ]+$/gm;
+var regEndsWithFlags = /\/(?!.*(.).*\1)[gimsuy]*$/;
 
 var tc = {
   settings: {
@@ -274,8 +275,12 @@ function defineVideoController() {
     const document = this.video.ownerDocument;
     const speed = this.video.playbackRate.toFixed(2);
     const rect = this.video.getBoundingClientRect();
-    const top = Math.max(rect.top, 0) + "px";
-    const left = Math.max(rect.left, 0) + "px";
+    // getBoundingClientRect is relative to the viewport; style coordinates
+    // are relative to offsetParent, so we adjust for that here. offsetParent
+    // can be null if the video has `display: none` or is not yet in the DOM.
+    const offsetRect = this.video.offsetParent?.getBoundingClientRect();
+    const top = Math.max(rect.top - (offsetRect?.top || 0), 0) + "px";
+    const left = Math.max(rect.left - (offsetRect?.left || 0), 0) + "px";
 
     log("Speed variable set to: " + speed, 5);
 
@@ -366,8 +371,9 @@ function defineVideoController() {
         p.insertBefore(fragment, p.firstChild);
         break;
       case location.hostname == "tv.apple.com":
-        // insert after parent for correct stacking context
-        this.parent.getRootNode().querySelector(".scrim").prepend(fragment);
+        // insert before parent to bypass overlay
+        this.parent.parentNode.insertBefore(fragment, this.parent.parentNode.firstChild);
+        break;
       default:
         // Note: when triggered via a MutationRecord, it's possible that the
         // target is not the immediate parent. This appends the controller as
@@ -393,7 +399,17 @@ function isBlacklisted() {
 
     if (match.startsWith("/")) {
       try {
-        var regexp = new RegExp(match);
+        var parts = match.split("/");
+
+        if (regEndsWithFlags.test(match)) {
+          var flags = parts.pop();
+          var regex = parts.slice(1).join("/");
+        } else {
+          var flags = "";
+          var regex = match;
+        }
+
+        var regexp = new RegExp(regex, flags);
       } catch (err) {
         return;
       }
@@ -682,6 +698,13 @@ function initializeNow(document) {
             case "childList":
               mutation.addedNodes.forEach(function (node) {
                 if (typeof node === "function") return;
+                if (node === document.documentElement) {
+                  // This happens on sites that use document.write, e.g. watch.sling.com
+                  // When the document gets replaced, we lose all event handlers, so we need to reinitialize
+                  log("Document was replaced, reinitializing", 5);
+                  initializeWhenReady(document);
+                  return;
+                }
                 checkForVideo(node, node.parentNode || mutation.target, true);
               });
               mutation.removedNodes.forEach(function (node) {
@@ -691,14 +714,19 @@ function initializeNow(document) {
               break;
             case "attributes":
               if (
-                mutation.target.attributes["aria-hidden"] &&
-                mutation.target.attributes["aria-hidden"].value == "false"
+                (mutation.target.attributes["aria-hidden"] &&
+                  mutation.target.attributes["aria-hidden"].value == "false") ||
+                mutation.target.nodeName === "APPLE-TV-PLUS-PLAYER"
               ) {
                 var flattenedNodes = getShadow(document.body);
-                var node = flattenedNodes.filter(
-                  (x) => x.tagName == "VIDEO"
-                )[0];
-                if (node) {
+                var nodes = flattenedNodes.filter((x) => x.tagName == "VIDEO");
+                for (let node of nodes) {
+                  // only add vsc the first time for the apple-tv case (the attribute change is triggered every time you click the vsc)
+                  if (
+                    node.vsc &&
+                    mutation.target.nodeName === "APPLE-TV-PLUS-PLAYER"
+                  )
+                    continue;
                   if (node.vsc) node.vsc.remove();
                   checkForVideo(node, node.parentNode || mutation.target, true);
                 }
@@ -711,7 +739,7 @@ function initializeNow(document) {
     );
   });
   observer.observe(document, {
-    attributeFilter: ["aria-hidden"],
+    attributeFilter: ["aria-hidden", "data-focus-method"],
     childList: true,
     subtree: true
   });
