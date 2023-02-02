@@ -439,10 +439,11 @@ function refreshCoolDown() {
 
 function setupListener() {
   function onWheelEvent(ev) {
+    log(ev.deltaX, ev.deltaY, 5);
     let changeRate = 0.1;
     if (ev.shiftKey) {
       if (ev.altKey) {
-        if (ev.deltaY > 0) {
+        if (ev.deltaY > 0 || ev.deltaX > 0) {
           ev.preventDefault();
           runAction("softer", changeRate);
         } else {
@@ -450,7 +451,7 @@ function setupListener() {
           runAction("louder", changeRate);
         }
       } else {
-        if (ev.deltaY > 0) {
+        if (ev.deltaY > 0 || ev.deltaX > 0) {
           ev.preventDefault();
           runAction("rewind", changeRate * 10);
         } else {
@@ -459,7 +460,7 @@ function setupListener() {
         }
       }
     } else if (ev.altKey) {
-      if (ev.deltaY > 0) {
+      if (ev.deltaY > 0 || ev.deltaX > 0) {
         ev.preventDefault();
         runAction("slower", changeRate);
       } else {
