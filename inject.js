@@ -1,5 +1,7 @@
 var regStrip = /^[\r\t\f\v ]+|[\r\t\f\v ]+$/gm;
 var regEndsWithFlags = /\/(?!.*(.).*\1)[gimsuy]*$/;
+var frameTime = 1 / 60; // fallback value (approx. 1 frame at 60fps)
+
 
 var tc = {
   settings: {
@@ -200,6 +202,8 @@ function defineVideoController() {
     log("Explicitly setting playbackRate to: " + storedSpeed, 5);
     target.playbackRate = storedSpeed;
 
+    this.frameTime = frameTime;
+
     this.div = this.initializeControls();
 
     var mediaEventAction = function (event) {
@@ -225,6 +229,7 @@ function defineVideoController() {
       // with the site's default behavior)
       log("Explicitly setting playbackRate to: " + storedSpeed, 4);
       setSpeed(event.target, storedSpeed);
+      this.estimateFPS();
     };
 
     target.addEventListener(
@@ -250,6 +255,7 @@ function defineVideoController() {
             controller.classList.add("vsc-nosource");
           } else {
             controller.classList.remove("vsc-nosource");
+            this.estimateFPS();
           }
         }
       });
@@ -257,6 +263,8 @@ function defineVideoController() {
     observer.observe(target, {
       attributeFilter: ["src", "currentSrc"]
     });
+
+    this.estimateFPS();
   };
 
   tc.videoController.prototype.remove = function () {
@@ -268,6 +276,32 @@ function defineVideoController() {
     if (idx != -1) {
       tc.mediaElements.splice(idx, 1);
     }
+  };
+
+  tc.videoController.prototype.estimateFPS = function () {
+    if (!this.video.requestVideoFrameCallback) return;
+
+    let lastTime = 0;
+    let frameCount = 0;
+    const maxFrames = 100; // Estimate over 100 frames for accuracy
+
+    const frameCallback = (now, metadata) => {
+      if (lastTime !== 0) {
+        const delta = metadata.mediaTime - lastTime;
+        // Accept deltas between 5ms (200fps) and 250ms (4fps)
+        if (delta > 0.005 && delta < 0.25) {
+          // Weighted average to smooth the estimation
+          this.frameTime = this.frameTime * 0.9 + delta * 0.1;
+        }
+      }
+      lastTime = metadata.mediaTime;
+
+      if (frameCount++ < maxFrames && !this.video.paused) {
+        this.video.requestVideoFrameCallback(frameCallback);
+      }
+    };
+
+    this.video.requestVideoFrameCallback(frameCallback);
   };
 
   tc.videoController.prototype.initializeControls = function () {
@@ -301,18 +335,19 @@ function defineVideoController() {
           @import "${chrome.runtime.getURL("shadow.css")}";
         </style>
 
-        <div id="controller" style="top:${top}; left:${left}; opacity:${
-      tc.settings.controllerOpacity
-    }">
+        <div id="controller" style="top:${top}; left:${left}; opacity:${tc.settings.controllerOpacity
+      }">
           <span data-action="drag" class="draggable">${speed}</span>
           <span id="vsc-log" data-action="log" class="vsc-shadow-hidden"></span>
           <span id="controls">
             <button data-action="rewind" class="rw">«</button>
+            <button data-action="frameBackward" class="rw">‹</button>
             <button data-action="slower">&minus;</button>
             <button data-action="faster">&plus;</button>
+            <button data-action="frameForward" class="rw">›</button>
+            <button data-action="advance" class="rw">»</button>
             <button data-action="louder" class="rw">&and;</button>
             <button data-action="softer" class="rw">&or;</button>
-            <button data-action="advance" class="rw">»</button>
             <button data-action="screenshot">pic</button>
             <button data-action="display" class="hideButton">&times;</button>
           </span>
@@ -441,7 +476,16 @@ function setupListener() {
   function onWheelEvent(ev) {
     log(ev.deltaX, ev.deltaY, 5);
     let changeRate = 0.1;
-    if (ev.shiftKey) {
+    if (ev.ctrlKey && ev.shiftKey) {
+      if (ev.deltaY > 0 || ev.deltaX > 0) {
+        ev.preventDefault();
+        runAction("frameBackward");
+      } else {
+        ev.preventDefault();
+        runAction("frameForward");
+      }
+    } else if (ev.shiftKey) {
+
       if (ev.altKey) {
         if (ev.deltaY > 0 || ev.deltaX > 0) {
           ev.preventDefault();
@@ -475,7 +519,7 @@ function setupListener() {
   });
 
   document.body.addEventListener("keydown", function (evt) {
-    if (evt.ctrlKey && evt.altKey && evt.shiftKey && evt.key == "C") {
+    if (evt.ctrlKey && evt.metaKey && evt.shiftKey && evt.key == "C") {
       runAction("screenshot");
     }
   });
@@ -613,7 +657,7 @@ function initializeNow(document) {
   var docs = Array(document);
   try {
     if (inIframe()) docs.push(window.top.document);
-  } catch (e) {}
+  } catch (e) { }
 
   docs.forEach(function (doc) {
     doc.addEventListener(
@@ -893,6 +937,12 @@ function runAction(action, value, e) {
       } else if (action === "advance") {
         log("Fast forward", 5);
         v.currentTime += value;
+      } else if (action === "frameForward") {
+        log("Frame forward", 5);
+        v.currentTime += value || v.vsc.frameTime;
+      } else if (action === "frameBackward") {
+        log("Frame backward", 5);
+        v.currentTime -= value || v.vsc.frameTime;
       } else if (action === "faster") {
         log("Increase speed", 5);
         // Maximum playback speed in Chrome is set to 16:
