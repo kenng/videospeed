@@ -1,5 +1,9 @@
 {
+  "scripts": {
+    "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=${HOME}/.cache/ms-playwright playwright test"
+  },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "cws-publish": "^2.1.1"
   }
 }

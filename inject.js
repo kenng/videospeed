@@ -630,6 +630,102 @@ function getShadow(parent) {
   return result.flat(Infinity);
 }
 
+function isMediaElement(node) {
+  if (!node || node.nodeType !== 1) {
+    return false;
+  }
+  return (
+    node.nodeName === "VIDEO" ||
+    (node.nodeName === "AUDIO" && tc.settings.audioBoolean)
+  );
+}
+
+// querySelectorAll does not pierce shadow roots (e.g. mux-player, media-chrome)
+function mediaFromPlayerHost(el) {
+  if (!el || el.nodeType !== 1) {
+    return null;
+  }
+  if (el.media instanceof HTMLMediaElement) {
+    return el.media;
+  }
+  if (el.shadowRoot) {
+    var direct = el.shadowRoot.querySelector("video,audio");
+    if (direct) {
+      return direct;
+    }
+    var nested = el.shadowRoot.querySelector("mux-video");
+    if (nested) {
+      return mediaFromPlayerHost(nested);
+    }
+  }
+  return null;
+}
+
+function enumerateMediaElements(root) {
+  var media = [];
+  var seen = new Set();
+  if (!root) {
+    return media;
+  }
+
+  function add(node) {
+    if (node && !seen.has(node)) {
+      seen.add(node);
+      media.push(node);
+    }
+  }
+
+  function walk(node) {
+    if (!node) {
+      return;
+    }
+    if (node.nodeType === 1) {
+      if (isMediaElement(node)) {
+        add(node);
+      }
+      if (
+        node.nodeName === "MUX-PLAYER" ||
+        node.nodeName === "MUX-VIDEO" ||
+        node.nodeName === "MEDIA-CONTROLLER"
+      ) {
+        var fromHost = mediaFromPlayerHost(node);
+        if (fromHost) {
+          add(fromHost);
+        }
+      }
+      if (node.shadowRoot) {
+        walk(node.shadowRoot);
+      }
+      for (var i = 0; i < node.children.length; i++) {
+        walk(node.children[i]);
+      }
+    } else if (node.nodeType === 11) {
+      for (var j = 0; j < node.children.length; j++) {
+        walk(node.children[j]);
+      }
+    }
+  }
+
+  walk(root);
+  if (root.querySelectorAll) {
+    root.querySelectorAll("mux-player,mux-video,media-controller").forEach(function (host) {
+      var fromHost = mediaFromPlayerHost(host);
+      if (fromHost) {
+        add(fromHost);
+      }
+    });
+  }
+  return media;
+}
+
+function attachMediaElementsInRoot(root, parent) {
+  enumerateMediaElements(root).forEach(function (media) {
+    if (!media.vsc) {
+      media.vsc = new tc.videoController(media, media.parentElement || parent);
+    }
+  });
+}
+
 function initializeNow(document) {
   log("Begin initializeNow", 5);
   if (!tc.settings.enabled) return;
@@ -715,24 +811,65 @@ function initializeNow(document) {
     if (!added && document.body.contains(node)) {
       return;
     }
-    if (
-      node.nodeName === "VIDEO" ||
-      (node.nodeName === "AUDIO" && tc.settings.audioBoolean)
-    ) {
-      if (added) {
-        node.vsc = new tc.videoController(node, parent);
-      } else {
-        if (node.vsc) {
-          node.vsc.remove();
+    if (!node || node.nodeType !== 1) {
+      return;
+    }
+    if (added) {
+      observeShadowRootsFrom(node);
+    }
+    if (added) {
+      attachMediaElementsInRoot(node, parent);
+    } else {
+      enumerateMediaElements(node).forEach(function (media) {
+        if (media.vsc) {
+          media.vsc.remove();
         }
-      }
-    } else if (node.children != undefined) {
-      for (var i = 0; i < node.children.length; i++) {
-        const child = node.children[i];
-        checkForVideo(child, child.parentNode || parent, added);
-      }
+      });
     }
   }
+
+  var observedShadowRoots = new WeakSet();
+
+  function observeShadowRootsFrom(node) {
+    if (!node || node.nodeType !== 1) {
+      return;
+    }
+
+    function walk(el) {
+      if (!el || el.nodeType !== 1) {
+        return;
+      }
+      if (el.shadowRoot && !observedShadowRoots.has(el.shadowRoot)) {
+        observedShadowRoots.add(el.shadowRoot);
+        shadowMediaObserver.observe(el.shadowRoot, {
+          childList: true,
+          subtree: true
+        });
+        walk(el.shadowRoot);
+      }
+      for (var i = 0; i < el.children.length; i++) {
+        walk(el.children[i]);
+      }
+    }
+
+    walk(node);
+  }
+
+  var shadowMediaObserver = new MutationObserver(function (mutations) {
+    mutations.forEach(function (mutation) {
+      if (mutation.type !== "childList") {
+        return;
+      }
+      mutation.addedNodes.forEach(function (node) {
+        if (typeof node === "function") return;
+        checkForVideo(node, node.parentNode || mutation.target, true);
+      });
+      mutation.removedNodes.forEach(function (node) {
+        if (typeof node === "function") return;
+        checkForVideo(node, node.parentNode || mutation.target, false);
+      });
+    });
+  });
 
   var observer = new MutationObserver(function (mutations) {
     // Process the DOM nodes lazily
@@ -763,8 +900,7 @@ function initializeNow(document) {
                   mutation.target.attributes["aria-hidden"].value == "false") ||
                 mutation.target.nodeName === "APPLE-TV-PLUS-PLAYER"
               ) {
-                var flattenedNodes = getShadow(document.body);
-                var nodes = flattenedNodes.filter((x) => x.tagName == "VIDEO");
+                var nodes = enumerateMediaElements(document.body);
                 for (let node of nodes) {
                   // only add vsc the first time for the apple-tv case (the attribute change is triggered every time you click the vsc)
                   if (
@@ -789,14 +925,15 @@ function initializeNow(document) {
     subtree: true
   });
 
-  if (tc.settings.audioBoolean) {
-    var mediaTags = document.querySelectorAll("video,audio");
-  } else {
-    var mediaTags = document.querySelectorAll("video");
-  }
+  observeShadowRootsFrom(document.body);
+  attachMediaElementsInRoot(document.body);
 
-  mediaTags.forEach(function (video) {
-    video.vsc = new tc.videoController(video);
+  // Mux/React players often mount their <video> after the host element appears
+  [0, 250, 500, 1000, 2000, 5000, 10000].forEach(function (delay) {
+    setTimeout(function () {
+      observeShadowRootsFrom(document.body);
+      attachMediaElementsInRoot(document.body);
+    }, delay);
   });
 
   var frameTags = document.getElementsByTagName("iframe");
