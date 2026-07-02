@@ -4,7 +4,9 @@
   font-size: 13px;
 }
 
-:host(:hover) #controls {
+:host(:hover) #controls,
+:host(.vcs-hover) #controls,
+#controller:hover #controls {
   display: inline;
 }
 

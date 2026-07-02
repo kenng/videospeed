@@ -331,9 +331,7 @@ function defineVideoController() {
 
     var shadow = wrapper.attachShadow({ mode: "open" });
     var shadowTemplate = `
-        <style>
-          @import "${chrome.runtime.getURL("shadow.css")}";
-        </style>
+        <link rel="stylesheet" href="${chrome.runtime.getURL("shadow.css")}">
 
         <div id="controller" style="top:${top}; left:${left}; opacity:${tc.settings.controllerOpacity
       }">
@@ -384,6 +382,15 @@ function defineVideoController() {
     shadow
       .querySelector("#controller")
       .addEventListener("mousedown", (e) => e.stopPropagation(), false);
+
+    const shadowController = shadow.querySelector("#controller");
+    shadowController.addEventListener("mouseenter", () => {
+      wrapper.classList.add("vcs-hover");
+      showController(wrapper);
+    });
+    shadowController.addEventListener("mouseleave", () => {
+      wrapper.classList.remove("vcs-hover");
+    });
 
     this.speedIndicator = shadow.querySelector("span");
     var fragment = document.createDocumentFragment();

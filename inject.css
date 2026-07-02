@@ -18,6 +18,11 @@
 
 /* Origin specific overrides */
 /* YouTube player */
+.html5-video-player .vsc-controller {
+  /* Above ytp-chrome-top (60) and ytp-large-play-button (63) */
+  z-index: 70;
+}
+
 .ytp-hide-info-bar .vsc-controller {
   position: relative;
   top: 10px;
@@ -29,6 +34,9 @@
   opacity: 0;
 }
 
+.ytp-autohide.html5-video-player:hover .vsc-controller,
+.ytp-autohide .vsc-controller:hover,
+.ytp-autohide .vsc-controller.vcs-hover,
 .ytp-autohide .vcs-show {
   visibility: visible;
   opacity: 1;
