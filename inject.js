@@ -13,6 +13,7 @@ var tc = {
     rememberSpeed: false, // default: false
     forceLastSavedSpeed: false, //default: false
     audioBoolean: false, // default: false
+    screenshotToClipboard: false, // default: false
     startHidden: false, // default: false
     controllerOpacity: 0.3, // default: 0.3
     keyBindings: [],
@@ -116,6 +117,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
       rememberSpeed: tc.settings.rememberSpeed,
       forceLastSavedSpeed: tc.settings.forceLastSavedSpeed,
       audioBoolean: tc.settings.audioBoolean,
+      screenshotToClipboard: tc.settings.screenshotToClipboard,
       startHidden: tc.settings.startHidden,
       enabled: tc.settings.enabled,
       controllerOpacity: tc.settings.controllerOpacity,
@@ -127,6 +129,7 @@ chrome.storage.sync.get(tc.settings, function (storage) {
   tc.settings.rememberSpeed = Boolean(storage.rememberSpeed);
   tc.settings.forceLastSavedSpeed = Boolean(storage.forceLastSavedSpeed);
   tc.settings.audioBoolean = Boolean(storage.audioBoolean);
+  tc.settings.screenshotToClipboard = Boolean(storage.screenshotToClipboard);
   tc.settings.enabled = Boolean(storage.enabled);
   tc.settings.startHidden = Boolean(storage.startHidden);
   tc.settings.controllerOpacity = Number(storage.controllerOpacity);
@@ -146,6 +149,17 @@ chrome.storage.sync.get(tc.settings, function (storage) {
   }
 
   initializeWhenReady(document);
+});
+
+chrome.storage.onChanged.addListener(function (changes, area) {
+  if (area !== "sync") {
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(changes, "screenshotToClipboard")) {
+    tc.settings.screenshotToClipboard = Boolean(
+      changes.screenshotToClipboard.newValue
+    );
+  }
 });
 
 function getKeyBindings(action, what = "value") {
@@ -1034,6 +1048,36 @@ function downloadScreenshot(videoElem) {
   });
 }
 
+function copyScreenshot(videoElem) {
+  if (!videoElem.videoWidth || !videoElem.videoHeight) {
+    return Promise.reject(new Error("Video frame is not ready"));
+  }
+  if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+    return Promise.reject(new Error("Clipboard API unavailable"));
+  }
+
+  var canvas = screenshot(videoElem);
+  // Call write() during the user gesture; defer blob creation via Promise so
+  // activation is not lost waiting for toBlob.
+  return navigator.clipboard.write([
+    new ClipboardItem({
+      "image/png": new Promise(function (resolve, reject) {
+        try {
+          canvas.toBlob(function (blob) {
+            if (!blob) {
+              reject(new Error("Unable to capture screenshot"));
+              return;
+            }
+            resolve(blob);
+          }, "image/png");
+        } catch (error) {
+          reject(error);
+        }
+      })
+    })
+  ]);
+}
+
 function blinkLog(controller, msg, value) {
   const elem = controller.shadowRoot.querySelector("#vsc-log");
 
@@ -1166,8 +1210,20 @@ function runAction(action, value, e) {
       } else if (action === "jump") {
         jumpToMark(v);
       } else if (action === "screenshot") {
-        downloadScreenshot(v);
-        blinkLog(controller, "Capturing image");
+        if (tc.settings.screenshotToClipboard) {
+          copyScreenshot(v).then(
+            function () {
+              blinkLog(controller, "Image copied");
+            },
+            function (error) {
+              log("Unable to copy screenshot: " + error, 2);
+              blinkLog(controller, "Unable to copy image");
+            }
+          );
+        } else {
+          downloadScreenshot(v);
+          blinkLog(controller, "Saving image");
+        }
       } else if (action === "fitWidth") {
         var fitted = toggleFitWidth(v);
         blinkLog(controller, fitted ? "Width 100%" : "Width restored");

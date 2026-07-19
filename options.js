@@ -5,6 +5,7 @@ var tcDefaults = {
   displayKeyCode: 86, // default: V
   rememberSpeed: false, // default: false
   audioBoolean: false, // default: false
+  screenshotToClipboard: false, // default: false
   startHidden: false, // default: false
   forceLastSavedSpeed: false, //default: false
   enabled: true, // default enabled
@@ -186,7 +187,7 @@ function validate() {
 
   blacklist.value.split("\n").forEach((match) => {
     match = match.replace(regStrip, "");
-    
+
     if (match.startsWith("/")) {
       try {
         var parts = match.split("/");
@@ -222,6 +223,9 @@ function save_options() {
   var rememberSpeed = document.getElementById("rememberSpeed").checked;
   var forceLastSavedSpeed = document.getElementById("forceLastSavedSpeed").checked;
   var audioBoolean = document.getElementById("audioBoolean").checked;
+  var screenshotToClipboard = document.getElementById(
+    "screenshotToClipboard"
+  ).checked;
   var enabled = document.getElementById("enabled").checked;
   var startHidden = document.getElementById("startHidden").checked;
   var controllerOpacity = document.getElementById("controllerOpacity").value;
@@ -245,6 +249,7 @@ function save_options() {
       rememberSpeed: rememberSpeed,
       forceLastSavedSpeed: forceLastSavedSpeed,
       audioBoolean: audioBoolean,
+      screenshotToClipboard: screenshotToClipboard,
       enabled: enabled,
       startHidden: startHidden,
       controllerOpacity: controllerOpacity,
@@ -268,6 +273,8 @@ function restore_options() {
     document.getElementById("rememberSpeed").checked = storage.rememberSpeed;
     document.getElementById("forceLastSavedSpeed").checked = storage.forceLastSavedSpeed;
     document.getElementById("audioBoolean").checked = storage.audioBoolean;
+    document.getElementById("screenshotToClipboard").checked =
+      storage.screenshotToClipboard;
     document.getElementById("enabled").checked = storage.enabled;
     document.getElementById("startHidden").checked = storage.startHidden;
     document.getElementById("controllerOpacity").value =
