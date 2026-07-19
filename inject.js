@@ -347,6 +347,7 @@ function defineVideoController() {
             <button data-action="louder" class="rw">&and;</button>
             <button data-action="softer" class="rw">&or;</button>
             <button data-action="screenshot">pic</button>
+            <button data-action="fitWidth" title="Fit video to container width">⇔</button>
             <button data-action="display" class="hideButton">&times;</button>
           </span>
         </div>
@@ -1167,6 +1168,9 @@ function runAction(action, value, e) {
       } else if (action === "screenshot") {
         downloadScreenshot(v);
         blinkLog(controller, "Capturing image");
+      } else if (action === "fitWidth") {
+        var fitted = toggleFitWidth(v);
+        blinkLog(controller, fitted ? "Width 100%" : "Width restored");
       }
     }
   });
@@ -1264,6 +1268,160 @@ function toggleCaptions(video) {
     btn.click();
   }
   return null;
+}
+
+function findFitWidthContainer(video) {
+  var el = video.parentElement;
+  var best = null;
+  while (el && el !== document.documentElement) {
+    if (el.clientWidth > video.clientWidth * 1.15) {
+      best = el;
+      var className = String(el.className || "");
+      var hasColumnChild = Array.from(el.children || []).some(function (child) {
+        var cs = getComputedStyle(child);
+        return (
+          cs.float === "left" ||
+          cs.float === "right" ||
+          /col-(xs|sm|md|lg|xl)|col_left|col_right|col-/i.test(
+            String(child.className || "")
+          )
+        );
+      });
+      if (
+        hasColumnChild ||
+        /\b(row|container|containerInner|main|article)\b/i.test(
+          className + " " + el.tagName
+        )
+      ) {
+        return el;
+      }
+    }
+    el = el.parentElement;
+  }
+  return best || video.parentElement || document.body;
+}
+
+function saveFitWidthStyles(el) {
+  return {
+    el: el,
+    cssText: el.style.cssText
+  };
+}
+
+function restoreFitWidthStyles(saved) {
+  saved.forEach(function (item) {
+    item.el.style.cssText = item.cssText;
+  });
+}
+
+function setImportantStyle(el, prop, value) {
+  el.style.setProperty(prop, value, "important");
+}
+
+function toggleFitWidth(v) {
+  if (v.dataset.vscFitWidth === "1") {
+    var saved = v.vsc && v.vsc.savedFitWidthStyles;
+    if (saved && saved.length) {
+      restoreFitWidthStyles(saved);
+    }
+    delete v.dataset.vscFitWidth;
+    window.dispatchEvent(new Event("resize"));
+    log("Restored video width", 5);
+    return false;
+  }
+
+  var container = findFitWidthContainer(v);
+  if (!container) {
+    log("No fit-width container found", 3);
+    return false;
+  }
+
+  var mutations = [];
+  var touched = new Set();
+  function touch(el) {
+    if (!el || touched.has(el) || el === container) {
+      return;
+    }
+    touched.add(el);
+    mutations.push(saveFitWidthStyles(el));
+  }
+
+  // Expand every ancestor between the video and the chosen container.
+  var el = v;
+  while (el && el !== container) {
+    touch(el);
+    el = el.parentElement;
+  }
+
+  // If the video sits in a column beside siblings, reclaim full container width
+  // and stack siblings below so chapter lists / sidebars remain reachable.
+  Array.from(container.children || []).forEach(function (child) {
+    touch(child);
+    setImportantStyle(child, "width", "100%");
+    setImportantStyle(child, "max-width", "100%");
+    setImportantStyle(child, "float", "none");
+    if (!(child.contains(v) || child === v)) {
+      setImportantStyle(child, "clear", "both");
+    }
+  });
+
+  var targetWidth = container.clientWidth;
+  var aspect =
+    v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 16 / 9;
+  var targetHeight = Math.round(targetWidth / aspect);
+
+  touched.forEach(function (node) {
+    setImportantStyle(node, "width", "100%");
+    setImportantStyle(node, "max-width", "100%");
+
+    var className = String(node.className || "");
+    var isPlayerShell =
+      node === v ||
+      (node.classList &&
+        (node.classList.contains("w-chrome") ||
+          node.classList.contains("wistia_embed") ||
+          node.classList.contains("wistia_responsive_wrapper") ||
+          node.classList.contains("wistia_responsive_padding"))) ||
+      /wistia|video-wrapper|player|jwplayer|html5-video/i.test(className);
+
+    if (isPlayerShell) {
+      setImportantStyle(node, "height", targetHeight + "px");
+    }
+    if (
+      node.classList &&
+      node.classList.contains("wistia_responsive_padding")
+    ) {
+      setImportantStyle(node, "padding", "0");
+    }
+  });
+
+  // Size the visible player chrome in pixels so hosts with fixed inline widths
+  // (e.g. Wistia videoFoam) actually grow with the container.
+  var chrome =
+    (v.closest && (v.closest(".w-chrome") || v.closest(".wistia_embed"))) ||
+    v.parentElement;
+  if (chrome && chrome !== container) {
+    touch(chrome);
+    setImportantStyle(chrome, "width", targetWidth + "px");
+    setImportantStyle(chrome, "max-width", "100%");
+    setImportantStyle(chrome, "height", targetHeight + "px");
+  }
+
+  setImportantStyle(v, "width", "100%");
+  setImportantStyle(v, "max-width", "100%");
+  setImportantStyle(v, "height", "100%");
+  setImportantStyle(v, "object-fit", "contain");
+
+  if (v.vsc) {
+    v.vsc.savedFitWidthStyles = mutations;
+  }
+  v.dataset.vscFitWidth = "1";
+  window.dispatchEvent(new Event("resize"));
+  log(
+    "Set video width to 100% of container (" + Math.round(targetWidth) + "px)",
+    5
+  );
+  return true;
 }
 
 function pause(v) {
