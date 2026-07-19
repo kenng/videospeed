@@ -526,8 +526,13 @@ function setupListener() {
   });
 
   document.body.addEventListener("keydown", function (evt) {
-    if (evt.ctrlKey && evt.metaKey && evt.shiftKey && evt.key == "C") {
+    if (!(evt.ctrlKey && evt.metaKey && evt.shiftKey)) {
+      return;
+    }
+    if (evt.key == "X") {
       runAction("screenshot");
+    } else if (evt.key == "C") {
+      runAction("caption");
     }
   });
 
@@ -1058,6 +1063,27 @@ function runAction(action, value, e) {
     var targetController = e.target.getRootNode().host;
   }
 
+  if (action === "caption") {
+    var captionTarget =
+      mediaTags.find(function (v) {
+        return (
+          v.vsc &&
+          !v.classList.contains("vsc-cancelled") &&
+          (!e || targetController == v.vsc.div)
+        );
+      }) || mediaTags[0];
+    if (captionTarget && captionTarget.vsc) {
+      showController(captionTarget.vsc.div);
+      var enabled = toggleCaptions(captionTarget);
+      blinkLog(
+        captionTarget.vsc.div,
+        enabled === null ? "Captions" : enabled ? "Captions on" : "Captions off"
+      );
+    }
+    log("runAction End", 5);
+    return;
+  }
+
   mediaTags.forEach(function (v) {
     var controller = v.vsc.div;
 
@@ -1145,6 +1171,99 @@ function runAction(action, value, e) {
     }
   });
   log("runAction End", 5);
+}
+
+function toggleHtml5Captions(video) {
+  if (!video.textTracks || !video.textTracks.length) {
+    return null;
+  }
+  var tracks = [];
+  for (var i = 0; i < video.textTracks.length; i++) {
+    var track = video.textTracks[i];
+    if (track.kind === "subtitles" || track.kind === "captions") {
+      tracks.push(track);
+    }
+  }
+  if (!tracks.length) {
+    return null;
+  }
+  var anyShowing = tracks.some(function (track) {
+    return track.mode === "showing";
+  });
+  if (anyShowing) {
+    tracks.forEach(function (track) {
+      track.mode = "disabled";
+    });
+    return false;
+  }
+  tracks[0].mode = "showing";
+  for (var j = 1; j < tracks.length; j++) {
+    tracks[j].mode = "disabled";
+  }
+  return true;
+}
+
+function toggleCaptions(video) {
+  var html5State = toggleHtml5Captions(video);
+  if (html5State !== null) {
+    return html5State;
+  }
+
+  // Player APIs like Wistia live in the page JS world, not the content-script world.
+  var resultId = "vscCaptionToggle_" + Date.now();
+  var marker = "data-vsc-caption-target";
+  video.setAttribute(marker, "1");
+  var script = document.createElement("script");
+  script.textContent =
+    "(function(){" +
+    "var result={enabled:null};" +
+    "try{" +
+    "var target=document.querySelector('[" +
+    marker +
+    "]');" +
+    "if(window.Wistia&&Wistia.api&&typeof Wistia.api.all==='function'){" +
+    "var videos=Wistia.api.all();" +
+    "var chosen=null;" +
+    "for(var i=0;i<videos.length;i++){" +
+    "var w=videos[i];" +
+    "var plugin=w.plugin&&(w.plugin.captions||w.plugin['captions-v1']);" +
+    "if(!plugin||typeof plugin.turnOn!=='function')continue;" +
+    "var container=typeof w.container==='function'?w.container():w.container;" +
+    "if(target&&container&&container.contains&&container.contains(target)){chosen=w;break;}" +
+    "if(!chosen)chosen=w;" +
+    "}" +
+    "if(chosen){" +
+    "var p=chosen.plugin.captions||chosen.plugin['captions-v1'];" +
+    "var on=typeof chosen.captionsEnabled==='function'&&chosen.captionsEnabled();" +
+    "if(on){p.turnOff();result.enabled=false;}else{p.turnOn();result.enabled=true;}" +
+    "}" +
+    "}" +
+    "}catch(e){}" +
+    "document.documentElement.setAttribute('" +
+    resultId +
+    "', result.enabled===null?'':String(result.enabled));" +
+    "})();";
+  (document.documentElement || document.head).appendChild(script);
+  script.remove();
+  video.removeAttribute(marker);
+  var attr = document.documentElement.getAttribute(resultId);
+  document.documentElement.removeAttribute(resultId);
+  if (attr === "true") return true;
+  if (attr === "false") return false;
+
+  var root = video.closest(".wistia_embed") || video.parentElement || document;
+  var btn = root.querySelector(
+    '[data-handle="captionsButton"] button, button[aria-label*="aption" i], button[title*="aption" i], button.ytp-subtitles-button'
+  );
+  if (!btn) {
+    btn = document.querySelector(
+      '[data-handle="captionsButton"] button, button[aria-label*="aption" i], button[title*="aption" i], button.ytp-subtitles-button'
+    );
+  }
+  if (btn) {
+    btn.click();
+  }
+  return null;
 }
 
 function pause(v) {
